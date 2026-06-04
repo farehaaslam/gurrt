@@ -13,7 +13,10 @@ def audio_extract_chunk_and_embed(
     audio_file = audio_extraction(path= video_path)
     text = audio_to_text(audio_file, model= whisper_model )
     chunked_text = chunk_text(text=text)
-    clip_inputs = clip_processor(text= chunked_text, return_tensors="pt", padding= True, ).to(device)
+    clip_inputs = clip_processor(text= chunked_text, 
+                                 return_tensors="pt", 
+                                 padding= True, 
+                                 truncation = True).to(device)
     
     with torch.no_grad():
         text_features = clip_model.get_text_features(**clip_inputs)

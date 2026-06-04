@@ -103,3 +103,22 @@ def download_models(cache_dir):
     print("Downloading Reranker....")
     reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
     reranker.save(str(cache_dir / "reranker_model"))
+    
+def download_clip(cache_dir):
+    print("Downloading CLIP....")
+    clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors = True)
+    proc = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    clip.save_pretrained(cache_dir / "clip_model")
+    proc.save_pretrained(cache_dir / "clip_model")
+
+def download_blip(cache_dir):
+    print("Downloading BLIP....")
+    blip = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base", use_safetensors= True)
+    blip_proc = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+    blip.save_pretrained(cache_dir / "blip_model")
+    blip_proc.save_pretrained(cache_dir / "blip_model")
+
+def download_reranker(cache_dir):
+    print("Downloading Reranker....")
+    reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+    reranker.save(str(cache_dir / "reranker_model"))

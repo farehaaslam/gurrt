@@ -21,6 +21,7 @@ class VideoRag:
         self.search = SearchService(clip_model=self.clip_model,
                                     clip_processor=self.clip_processor,
                                     reranker= self.reranker,
+                                    vectordb= self.vectordb,
                                     settings= self.settings)
         
     def index_video(self, video_path:Path):

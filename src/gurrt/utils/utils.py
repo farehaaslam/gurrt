@@ -38,8 +38,8 @@ def audio_to_text(audio_path, model) -> str:
 def chunk_text(text):
         
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size = 512,
-        chunk_overlap = 64
+        chunk_size = 300,
+        chunk_overlap = 40
     )
     chunked_text = text_splitter.split_text(text=text)
     return chunked_text
@@ -56,6 +56,35 @@ def scene_split(video_path):
         print("Scene detection failed:", e)
         scene_list = []
     return scene_list
+
+def frame_listing_uniform(video_path: Path):
+    cap= cv2.VideoCapture(video_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    frame_idx = range(0, total_frames, int(fps))
+
+    frame_PIL = []
+    timestamps_list = []
+    ids = []
+    with tqdm(total = len(frame_idx), desc="\033[1;32mProcessing frames...\033[0m") as pbar: 
+        for frame_no in frame_idx:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_no)
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            timestamp_sec = cap.get(cv2.CAP_PROP_POS_MSEC) 
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            image = Image.fromarray(frame)
+            frame_id = f"{video_path}:{timestamp_sec}:Uniform"
+            
+            frame_PIL.append(image)
+            timestamps_list.append(timestamp_sec)
+            ids.append(frame_id)
+            pbar.update(1)
+        cap.release()
+    return frame_PIL, timestamps_list, ids, fps
 
 def generate_captions_in_batches(batch_of_frames, 
                                  clip_model, 
@@ -131,7 +160,7 @@ def batched_captioning(frame_list: list,
     caption_list = []
     embedding_list = []
     
-    with tqdm(total = int(len(frame_list)/ batch_size),
+    with tqdm(total = (len(frame_list) + batch_size -1 ) // batch_size,
               desc = "\033[1;32mAnalyzing video visuals...\033[0m") as pbar:
         for i in range(0, len(frame_list),batch_size):
             batch = frame_list[i:i+batch_size]
