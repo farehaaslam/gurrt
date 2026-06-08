@@ -16,7 +16,7 @@ def audio_extract_chunk_and_embed(
     text = audio_to_text(audio_file, 
                          model= whisper_model,
                          beam_size= 1)
-    print(text)
+    # print(text)
     chunked_text = chunk_text(text=text)
     clip_inputs = clip_processor(text= chunked_text, 
                                  return_tensors="pt", 

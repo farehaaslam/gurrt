@@ -517,7 +517,7 @@ def temporal_persistence_filter(video_path: Path,
 
     Parameters:
         hash_threshold        : Hamming distance to consider "changed" (0=identical, 64=totally different)
-        scan_fps              : must match what was used in Pass 1
+        fps_selected          : frames per second to sample from the video
         persistence_window_sec: how long a change must persist before it's trusted
         vote_ratio            : fraction of window frames that must stay above threshold
         min_interval_sec      : minimum gap between two selected frames
@@ -525,47 +525,56 @@ def temporal_persistence_filter(video_path: Path,
 
     Returns:
         frame_PIL   : list of PIL images (confirmed frames only)
-        timestamps  : list of timestamp_ms for each selected frame
+        timestamps  : list of timestamp_sec for each selected frame
         ids         : list of unique frame ID strings
         fps         : video frame rate
     """
-    cap = cv2.VideoCapture(video_path)
+    # cv2 used only for a one-time header read — no frame decoding
+    cap = cv2.VideoCapture(str(video_path))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    req_fps = max(1, fps // fps_selected)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+
+    frame_size = width * height * 3          # bgr24: 3 bytes per pixel
+    n_sampled = max(1, int((total_frames / fps) * fps_selected))
+
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    proc = subprocess.Popen(
+        [
+            ffmpeg_exe, "-i", str(video_path),
+            "-vf", f"fps={fps_selected}",
+            "-f", "rawvideo", "-pix_fmt", "bgr24",
+            "pipe:1"
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL
+    )
 
     STABLE, CANDIDATE = "STABLE", "CANDIDATE"
     state = STABLE
     ref_hash = None
-    candidate = None          # (frame_no, timestamp, hash_bits, raw_bgr)
+    candidate = None          # (frame_index, timestamp, hash_bits, raw_bgr copy)
     window_start = None
     last_selected_sec = None
     window_distances = []
-    selected_frames = []      # (timestamp, raw_bgr)
+    selected_frames = []      # (timestamp, raw_bgr copy)
 
-    frame_no = 0
-    n_sampled = max(1, total_frames // req_fps)
+    frame_index = 0
 
     with tqdm(total=n_sampled, desc="\033[1;32mTemporal Persistence Filtering Frames...\033[0m") as pbar:
-        while frame_no < total_frames:
-            is_sampled = (frame_no % req_fps == 0)
+        while True:
+            raw = proc.stdout.read(frame_size)
+            if len(raw) < frame_size:
+                break
 
-            if is_sampled:
-                ret, frame = cap.read()
-            else:
-                ret = cap.grab()
+            # read-only view — no copy until we actually need to store the frame
+            frame_view = np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 3)
+            timestamp = frame_index / fps_selected
+            frame_index += 1
 
-            
-
-            # advance counter after read/grab, before any logic
-            frame_no += 1
-
-            if not ret or not is_sampled:
-                continue
-
-            timestamp = cap.get(cv2.CAP_PROP_POS_MSEC) / 1000.0
-
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            gray = cv2.cvtColor(frame_view, cv2.COLOR_BGR2GRAY)
             small = cv2.resize(gray, (9, 8), interpolation=cv2.INTER_AREA)
             current_hash = (small[:, 1:] > small[:, :-1]).flatten()
 
@@ -576,7 +585,7 @@ def temporal_persistence_filter(video_path: Path,
                 continue
 
             # if timestamp - last_selected_sec > max_interval_sec:
-            #     selected_frames.append((timestamp, frame.copy()))
+            #     selected_frames.append((timestamp, frame_view.copy()))
             #     ref_hash = current_hash
             #     last_selected_sec = timestamp
             #     state = STABLE
@@ -590,8 +599,7 @@ def temporal_persistence_filter(video_path: Path,
             if state == STABLE:
                 if distance > hash_threshold:
                     state = CANDIDATE
-                    # store frame.copy() so no re-read pass is needed
-                    candidate = (frame_no - 1, timestamp, current_hash, frame.copy())
+                    candidate = (frame_index - 1, timestamp, current_hash, frame_view.copy())
                     window_start = timestamp
                     window_distances = [distance]
 
@@ -612,7 +620,8 @@ def temporal_persistence_filter(video_path: Path,
 
             pbar.update(1)
 
-    cap.release()
+    proc.stdout.close()
+    proc.wait()
 
     timestamp_sec = [f[0] for f in selected_frames]
     ids = [f"{video_path}:{t}:Persistence_Filter" for t in timestamp_sec]
@@ -620,11 +629,9 @@ def temporal_persistence_filter(video_path: Path,
         Image.fromarray(cv2.cvtColor(raw, cv2.COLOR_BGR2RGB))
         for _, raw in selected_frames
     ]
-    print(f"\033[1;32mTotal sampled frames hashed: {len(selected_frames)}\033[0m")
+    print(f"\033[1;32mTotal sampled frames selected: {len(selected_frames)}\033[0m")
     print(f"\033[1;32mTotal frames : {total_frames}\033[0m")
     return frame_PIL, timestamp_sec, ids, fps
-
-
 
 # def download_video_audio(url):
 #     try:
