@@ -292,6 +292,7 @@ Previously Whisper auto-downloaded to HuggingFace's global cache (`~/.cache/hugg
 | Re-read pass still used random seeks after refactor | `utils.py` | Eliminated entirely — candidate now stores `frame.copy()`, PIL conversion done at end on confirmed frames only |
 | `pbar.update(1)` skipped on `continue` paths | `utils.py` | Added `pbar.update(1)` before each `continue` (first-frame init and max-interval force-select paths). Progress bar was stalling then jumping. |
 | Dead code `hashed_frames = []` left from old 3-pass approach | `utils.py` | Removed |
+| Generator double-iteration in `audio_to_text` | `utils.py` | `segments = list(segments)` materializes the lazy generator immediately after `transcribe()`. Without this, iterating `segments` in a debug/print cell and then again in `"".join()` silently returns empty on the second pass — a silent data loss bug that produces an empty transcript with no error. |
 
 ---
 
@@ -300,6 +301,32 @@ Previously Whisper auto-downloaded to HuggingFace's global cache (`~/.cache/hugg
 | Target | File(s) | Notes |
 |--------|---------|-------|
 | Batch uniform frame sampling | `utils.py`, `embedding.py` | Created `frame_listing_uniform()` that collects all sampled frames first, then feeds them into the existing `batched_captioning()` (batch_size=16). Both scene-detection and uniform-sampling fallback now share the same batched captioning pipeline |
+
+---
+
+### ASR Pipeline — BatchedInferencePipeline + Distil-Whisper
+
+**Files:** `models.py` → `get_whisper()`, `download_models()`; `utils.py` → `audio_to_text()`
+
+#### What changed
+
+**`get_whisper()` returns `BatchedInferencePipeline` instead of raw `WhisperModel`:**
+
+`BatchedInferencePipeline` wraps the underlying `WhisperModel` and groups multiple audio segments into a single CTranslate2 kernel call per batch instead of processing them one at a time. Call sites (`asr.py`) required no changes — the batched object exposes the same `.transcribe()` API. Significant win on CUDA; marginal on CPU due to padding overhead.
+
+**`audio_to_text()` uses the batched API:**
+
+Switched from `model.transcribe(audio_path, beam_size=beam_size, vad_filter=True)` to `model.transcribe(audio_path, batch_size=8, vad_filter=True)`. `beam_size` is no longer passed — the batched pipeline handles decoding internally. `batch_size=8` is a conservative starting point for 4GB VRAM; can be increased to 16 on larger GPUs.
+
+**Generator materialized immediately:**
+
+`segments = list(segments)` added right after `transcribe()`. `transcribe()` returns a lazy generator — actual transcription runs only when iterated. Without materializing, any code that iterates `segments` twice (a print loop then `"".join()`, or a re-run cell in a notebook) gets an empty result on the second pass because a Python generator can only be consumed once. `list()` forces transcription to complete immediately and stores the result as a plain list safe to iterate repeatedly.
+
+**Distil-Whisper as default model:**
+
+`download_models()` default changed from `model_name="small"` to `model_name="distil-large-v2"`. Downloads `Systran/faster-whisper-distil-large-v2` — a knowledge-distilled version of Whisper large-v2. Approximately 3× faster than large-v2 with ~3% WER increase on clean English speech. English-only; not suitable if multilingual support is needed.
+
+**Known gap:** `download_whisper()` standalone function still defaults to `model_name="small"` — inconsistency with `download_models()`. A user calling it directly gets the small model, not distil-large-v2.
 
 ---
 
@@ -321,9 +348,8 @@ Previously Whisper auto-downloaded to HuggingFace's global cache (`~/.cache/hugg
 | **Replace BLIP with a richer VLM** | High | BLIP captions for lecture slides are poor ("a whiteboard with writing on it"). moondream2 (1.8B) can read text directly off slides and fits on 6GB VRAM alongside CLIP. OCR (pytesseract/easyocr) is even faster for text-heavy slides and more accurate — hybrid: OCR when text is detected, moondream2 fallback for diagrams/blackboard. |
 | **Drop BLIP `num_beams=3` to 1** | High | Beam search in BLIP generate is ~2-3x slower than greedy (`num_beams=1`). One line change in `generate_captions_in_batches`. BLIP captioning is now the dominant bottleneck after audio and hashing were sped up. |
 | ~~**`selected_frames` memory usage**~~ | ~~Medium~~ | ~~Currently stores `(timestamp, raw_bgr)` for all confirmed frames. For a 1-hour lecture with 150 slide changes at 1080p this is ~900MB. Fix: store `(frame_no, timestamp)` only, do a small re-read pass at the end (~150 seeks, fast).~~ **Resolved in FFmpeg Pipe + Adaptive Sampling step** — `candidate` now stores only `(timestamp, hash_bits)`; full-res reads done in Pass 2 for confirmed frames only. |
-| **String concatenation in `audio_to_text`** | Medium | `text += segment.text` in a loop is O(n²). For 1-hour lectures with hundreds of segments this accumulates. Replace with `"".join(segment.text for segment in segments)`. |
-| **Debug `print(text)` in `asr.py`** | Medium | Line 19 dumps the entire transcript to terminal on every index run. Remove it. |
-| **`subprocess` import position in `utils.py`** | Low | Imported mid-file (line 32) instead of at the top with other imports. |
-| **CLI `models_download` doesn't pass model name** | Low | `download_models(cache_dir)` in `cli/main.py` always passes `model_name="small"` (the default). If `WHISPER_MODEL` in config is changed to `medium` or `base`, the downloaded model won't match and `get_whisper()` will fail. Should read from `Settings()` and pass through. |
+| **Align `download_whisper()` default with `download_models()`** | Medium | `download_whisper()` standalone still defaults to `model_name="small"` while `download_models()` now defaults to `"distil-large-v2"`. A user calling `download_whisper()` directly gets the wrong model. Both should read the model name from `Settings()` rather than hardcoding. |
+| **`subprocess` import position in `utils.py`** | Low | Imported mid-file instead of at the top with other imports. |
+| **CLI `models_download` doesn't pass model name from Settings** | Low | `download_models(cache_dir)` in `cli/main.py` calls with the hardcoded default. If a user changes `WHISPER_MODEL` in config, the downloaded model won't match what `get_whisper()` loads. Should read from `Settings()` and pass through. |
 | **FastAPI `server.py` rewrite** | Low | Currently broken — imports `query_llm` and `delete` as module-level functions (they are methods on `LLMService`), and uses subprocess paths that don't work for an installed package. Needs full rewrite using `VideoRag` properly |
 | **BM25 / sparse hybrid retrieval for ASR** | Low | Dense CLIP embeddings + keyword overlap for transcript search. Lower priority given the CrossEncoder reranker already handles re-scoring accurately |
