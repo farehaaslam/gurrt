@@ -27,3 +27,5 @@ class Settings:
         self.MODEL_CACHE_DIR = home / "models"
         self.CHROMA_DB_PATH= home / "chroma_db"
         self.AUDIO_PATH = home / "output.wav"
+
+        self.LLAMA_RELEASE_URL = "https://github.com/ggml-org/llama.cpp/releases/download/b4600/llama-b4600-bin-win-cuda-cu12.6-x64.zip"
