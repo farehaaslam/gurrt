@@ -21,3 +21,4 @@ experiment/
 data/
 bin/
 models/
+captioned_nodes_debug.json

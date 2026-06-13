@@ -4,6 +4,7 @@ import sys
 import time
 import zipfile
 import subprocess
+import shutil
 import urllib
 from pathlib import Path
 
@@ -13,8 +14,6 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 is_windows = sys.platform == "win32"
 
-SERVER_BIN = PROJECT_ROOT / "bin" / ("llama-server.exe" if is_windows else "llama-server")    
-MODELS_DIR = PROJECT_ROOT / "models"
 logging.disable(logging.WARNING)
 
 import typer
@@ -22,6 +21,9 @@ from pathlib import Path
 from platformdirs import user_config_dir
 import json
 import asyncio
+from gurrt.core.pipeline import VideoRag
+from gurrt.config.config import SERVER_BIN,MODELS_DIR,BIN_DIR,llm_path,clip_path,llama_release_url,PROJECT_ROOT
+from gurrt.utils.llama_server_utils import download_gemma3_models
 from rich.theme import Theme
 from rich.console import Console
 from rich.prompt import Prompt
@@ -94,39 +96,21 @@ def init():
         border_style= "green"
         ))
 
-@app.command()        
+@app.command()
 def init_llama():
-    PROJECT_ROOT = Path(__file__).resolve().parents[3]
-    is_windows = sys.platform == "win32"
-    
-    # 1. Clean Subfolder Configuration Layout
-    BIN_DIR = PROJECT_ROOT / "bin"
-    SERVER_BIN = BIN_DIR / ("llama-server.exe" if is_windows else "llama-server")
-    MODELS_DIR = PROJECT_ROOT / "models"
-    
-    llm_path = MODELS_DIR / "gemma-3-4b-it-Q4_0.gguf"
-    clip_path = MODELS_DIR / "mmproj-model-f16.gguf"
-    #embed_path = MODELS_DIR / "embeddinggemma-300M-bf16.gguf"
-    
-    if not llm_path.exists() or not clip_path.exists() :
+    if not llm_path.exists() or not clip_path.exists():
         console.print("[error]❌ Error: Fixed GGUF model components missing from the root /models/ folder.[/error]")
         console.print("[warning]Please run this setup downloader command first:[/warning]\n👉 [bold cyan]gurrt models-download[/bold cyan]\n")
-        raise typer.Exit(code=1)
-   
-    # Check if the subfolder already contains our structural setup
-    if SERVER_BIN.exists() and (BIN_DIR / "llama.dll").exists():
-        console.print("[success]✔ Isolated runtime server binaries and dependencies verified.[/success]")
-        return
-        
-    # Ensure our isolated binary subdirectory exists
-    BIN_DIR.mkdir(parents=True, exist_ok=True)
-        
+        print("gemma3 models download started")
+        download_gemma3_models(MODELS_DIR) 
+        #raise typer.Exit(code=1)
+    if SERVER_BIN.exists():
+        console.print("[success]✔ Isolated runtime server binary verified.[/success]")
+        return    
+    BIN_DIR.mkdir(parents=True, exist_ok=True)   
     console.print("[warning]⚠️ Runtime dependencies missing. Fetching latest release assets via GitHub API...[/warning]")
     try:
-        # Fetch release metadata metadata safely
-        api_url = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
-        req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
-        
+        req = urllib.request.Request(llama_release_url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req) as response:
             release_data = json.loads(response.read().decode())
         
@@ -145,49 +129,46 @@ def init_llama():
                     break
         
         zip_path = PROJECT_ROOT / "temp_server.zip"
-        urllib.request.urlretrieve(download_url, zip_path)
+        console.print(f"[info]📥 Downloading dynamic release: {download_url.split('/')[-1]}...[/info]")
         
-        # Extract target engine components directly into the isolated bin directory
+        req_dl = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req_dl) as response, open(zip_path, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)        
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             archive_files = zip_ref.namelist()
             extracted_count = 0
-            
             for file_path in archive_files:
                 filename = os.path.basename(file_path)
                 lowered_filename = filename.lower()
-                
                 if not filename:
                     continue
-                
-                # Check for the primary server executable shell
-                if lowered_filename == "llama-server.exe" or lowered_filename == "llama-server":
+                if lowered_filename in ["llama-server.exe", "llama-server"]:
                     member_data = zip_ref.read(file_path)
                     with open(SERVER_BIN, "wb") as target_file:
                         target_file.write(member_data)
-                    extracted_count += 1
-                
-                # Grab ALL essential core DLLs and explicit architectural fallbacks
-                elif lowered_filename.endswith(".dll") and ("llama" in lowered_filename or "ggml" in lowered_filename or "cublas" in lowered_filename or "cudart" in lowered_filename):
+                    extracted_count += 1                
+                elif lowered_filename.endswith(".dll"):
                     member_data = zip_ref.read(file_path)
-                    dll_target_path = BIN_DIR / filename  # Target our subfolder path explicitly
+                    dll_target_path = BIN_DIR / filename  # Direct to bin/
                     with open(dll_target_path, "wb") as target_file:
                         target_file.write(member_data)
                     extracted_count += 1
             
             if extracted_count == 0:
-                raise FileNotFoundError("Could not find required execution components in this archive.")
-                
+                raise FileNotFoundError("Could not locate execution components inside the release archive.")
+
+       
         if os.path.exists(zip_path):
             os.remove(zip_path)
             
-        console.print("[success]✔ Runtime server engine successfully isolated inside /bin/ directory![/success]")
+        console.print("[success]✔ Server engine and entire dependency layout successfully isolated inside /bin/![/success]")
         
     except Exception as e:
-        console.print(f"[error]❌ Automation failed to retrieve server asset: {e}[/error]")
+        console.print(f"[error]❌ Automation failed to retrieve or extract server asset: {e}[/error]")
         if 'zip_path' in locals() and os.path.exists(zip_path):
             os.remove(zip_path)
-        raise typer.Exit(code=1) 
-
+        raise typer.Exit(code=1)
+    
 @app.command()
 def index_llama(video_path):
     """
@@ -226,7 +207,7 @@ def models_download():
     """
     cache_dir = config_dir /"models"
     cache_dir.mkdir(exist_ok= True, parents= True)
-
+    
     console.print(
         Panel(
             "[primary]Downloading Models[/primary]",
