@@ -72,7 +72,10 @@ class ModelManager:
         path = self.cache / "smolVLM_model"
         
         self._smol_processor = SmolVLMProcessor.from_pretrained(path, local_files_only= True)
-        self._smol_processor.image_processor.do_image_splitting = flag
+        if not flag:
+            print("\033[1;33mGPU Memory is less than 4GB, disabling image splitting for SmolVLM...\033[0m")
+            self._smol_processor.image_processor.do_image_splitting = False
+
         self._smol = SmolVLMForConditionalGeneration.from_pretrained(path,
                                                                     local_files_only= True)
         self._smol = torch.compile(self._smol, mode="reduce-overhead")
@@ -118,7 +121,7 @@ class ModelManager:
         self._reranker = None
         self._free_gpu()
         
-def download_models(cache_dir, model_name : str = "distil-large-v2"):
+def download_models(cache_dir):
     print("Downloading CLIP....")
     clip = CLIPModel.from_pretrained("openai/clip-vit-base-patch32", use_safetensors = True)
     proc = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
@@ -141,11 +144,8 @@ def download_models(cache_dir, model_name : str = "distil-large-v2"):
     reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
     reranker.save(str(cache_dir / "reranker_model"))
     
-    print(f"Downloading Whisper {model_name}....")
-    
-    settings = Settings()
+    print(f"Downloading Faster Whisper....")
     snapshot_download(
-        repo_id=f"Systran/faster-whisper-{model_name}",
+        repo_id=f"Systran/faster-distil-whisper-large-v2",
         local_dir=str(cache_dir / "whisper_model"),
-        token= settings.HuggingFace_Token
     )

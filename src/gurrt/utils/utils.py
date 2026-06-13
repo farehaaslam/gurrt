@@ -319,7 +319,6 @@ def captioning_ollama(video_path: Path,
             embeddings.append(image_embedding)
 
             metadatas.append({
-                "frame_idx": frame_no,
                 "caption": caption,
                 "timestamp_ms": timestamps_list[i],
                 "fps": fps,
@@ -327,7 +326,7 @@ def captioning_ollama(video_path: Path,
             })            
             pbar.update(1)
     return embeddings, metadatas, ids
-
+  
 def temporal_persistence_filter(video_path: Path,
                                 fps_selected: int = 2,
                                 stable_fps: float = 0.5,

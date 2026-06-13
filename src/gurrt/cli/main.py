@@ -60,8 +60,6 @@ def init():
     """
     groq_link = "https://console.groq.com/docs/models"
     supermemory_link = "https://supermemory.ai/docs/integrations/supermemory-sdk"
-    hf_token_link = "https://huggingface.co/settings/tokens"
-    hf_token_guide = "https://huggingface.co/docs/hub/en/security-tokens"
     config_file = config_dir / "config.json"
     console.print(
         Panel(
@@ -82,24 +80,11 @@ def init():
         )
     )
     supermemory = Prompt.ask("[primary]Enter Supermemory API Key[/primary]", password=True)
-
-    console.print(
-    Panel(
-        f"[info]Get your Hugging Face token here:[/info]\n"
-        f"[bold green]{hf_token_link}[/bold green]\n\n"
-        f"[info]Learn about authentication here:[/info]\n"
-        f"[bold green]{hf_token_guide}[/bold green]",
-        title="Hugging Face",
-        border_style="green"
-    )
-)
-    hf_token = Prompt.ask("[info]Enter HuggingFace Token[/info]", password=True)
     
     with open(config_file, "w") as f:
         json.dump({
             "GROQ_API_KEY": groq,
             "SUPERMEMORY_API_KEY": supermemory, 
-            "HuggingFace_Token": hf_token
         }, f, indent= 2)
         
     console.print(
@@ -112,8 +97,7 @@ def init():
 @app.command()
 def init_llama():
     if not llama_server_manager.llm_path.exists() or not llama_server_manager.mmproj_path.exists():
-        console.print("[error]❌ Error: Fixed GGUF model components missing from the root /models/ folder.[/error]")
-        console.print("[warning]Please run this setup downloader command first:[/warning]\n👉 [bold cyan]gurrt models-download[/bold cyan]\n")
+       
         print("gemma3 models download started")
         download_gemma3_models(llama_server_manager.models_dir) 
         #raise typer.Exit(code=1)
@@ -121,7 +105,7 @@ def init_llama():
         console.print("[success]✔ Isolated runtime server binary verified.[/success]")
         return    
     llama_server_manager.bin_dir.mkdir(parents=True, exist_ok=True)   
-    console.print("[warning]⚠️ Runtime dependencies missing. Fetching latest release assets via GitHub API...[/warning]")
+    console.print("[info]  Fetching latest release assets via GitHub API...[/info]")
     try:
         req = urllib.request.Request(llama_server_manager.llama_release_url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req) as response:
@@ -254,10 +238,17 @@ def index(video_path: Path, model_name:str):
         )
     )
         return
+    
     result = subprocess.run(
         ['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'],
         capture_output=True,
         text=True)
+    console.print(
+        Panel(
+            f"[primary]Available GPU Memory: {result.stdout.strip()} MB[/primary]",
+            border_style="green"
+        )
+    )    
     if int(result.stdout.strip()) > 4500:
         FLAG = True
     else:
@@ -272,6 +263,7 @@ def index(video_path: Path, model_name:str):
     
     video_time_start = time.time()
     if model_name.lower() == ("smolvlm"):
+
         rag.index_video(video_path=video_path,
                         flag = FLAG)
     elif model_name.lower() == "blip2":

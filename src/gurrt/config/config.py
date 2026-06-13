@@ -15,7 +15,6 @@ class Settings:
                 cfg = json.load(f)
             self.GROQ_API_KEY = cfg.get('GROQ_API_KEY')
             self.SUPERMEMORY_API_KEY = cfg.get("SUPERMEMORY_API_KEY")
-            self.HuggingFace_Token = cfg.get("HuggingFace_Token")
         else:
             raise RuntimeError("API Keys not found")
         self.CLIP_MODEL = "openai/clip-vit-base-patch32"
