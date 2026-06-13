@@ -222,56 +222,56 @@ class VideoRag:
         
         return result
 
-async def interactive_chat_session(self):
-    print("\n🚀 Preparing engine layers... Engine stays active until you exit.")
-    llama_server_manager = LlamaServerManager()
+    async def interactive_chat_session(self):
+        print("\n🚀 Preparing engine layers... Engine stays active until you exit.")
+        llama_server_manager = LlamaServerManager()
 
-    cmd = [
-        str(llama_server_manager.server_bin),
-        "-m", str(llama_server_manager.llm_path),
-        "--mmproj", str(llama_server_manager.mmproj_path),
-        "-ngl", "99",
-        "--parallel", "4",
-        "-c", "8192",
-        "--port", "8080",
-        #"--flash-attn",
-    ]
+        cmd = [
+            str(llama_server_manager.server_bin),
+            "-m", str(llama_server_manager.llm_path),
+            "--mmproj", str(llama_server_manager.mmproj_path),
+            "-ngl", "99",
+            "--parallel", "4",
+            "-c", "8192",
+            "--port", "8080",
+            #"--flash-attn",
+        ]
 
-    process_query = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
+        process_query = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
 
-    try:
-        wait_for_server()
-    except Exception as e:
-        print(f"❌ Error during server startup: {e}")
-        process_query.terminate()
-        return
+        try:
+            wait_for_server()
+        except Exception as e:
+            print(f"❌ Error during server startup: {e}")
+            process_query.terminate()
+            return
 
-    print("\n🤖 Gurrt Engine Ready! Type your query below.")
-    print("👉 Type 'exit', 'quit', or press Ctrl+C to drop session.\n")
+        print("\n🤖 Gurrt Engine Ready! Type your query below.")
+        print("👉 Type 'exit', 'quit', or press Ctrl+C to drop session.\n")
 
-    try:
-        while True:
-            user_query = input("📝 You: ").strip()
-            if not user_query:
-                continue
-            if user_query.lower() in ["exit", "quit"]:
-                print("\nShutting down interactive workspace session safely...")
-                break
+        try:
+            while True:
+                user_query = input("📝 You: ").strip()
+                if not user_query:
+                    continue
+                if user_query.lower() in ["exit", "quit"]:
+                    print("\nShutting down interactive workspace session safely...")
+                    break
 
-            print("🔍 Processing embeddings and fetching context...")
-            try:
-                response = await self.ask(query=user_query)
-                print(f"\n🧠 Gurrt: {response}\n" + "-"*50 + "\n")
-            except Exception as query_err:
-                print(f"❌ Execution Fault: {query_err}\n")
+                print("Thinking...")
+                try:
+                    response = await self.ask(query=user_query)
+                    print(f"\n🧠 Gurrt: {response}\n" + "-"*50 + "\n")
+                except Exception as query_err:
+                    print(f"❌ Execution Fault: {query_err}\n")
 
-    finally:
-        print("🧼 Cleaning memory allocation structures...")
-        process_query.terminate()
-        process_query.wait()
-        self.models.release_all()
-        print("✔ System resources released cleanly.")
+        finally:
+            print("🧼 Cleaning memory allocation structures...")
+            process_query.terminate()
+            process_query.wait()
+            self.models.release_all()
+            print("✔ System resources released cleanly.")
