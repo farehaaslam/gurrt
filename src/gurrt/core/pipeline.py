@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import requests
@@ -8,12 +9,17 @@ from gurrt.core.embedding import (
     frame_detection,
     frame_detection_blip,
     frame_detection_ollama,
-    scene_detection_frame_sampling_llama_server)
+    captioning_and_embedding_llama_server)
+
+from gurrt.utils.llama_server_utils import process_video,wait_for_server
 from gurrt.core.llm import LLMService
 from gurrt.core.models import ModelManager
 from gurrt.core.search import SearchService
 from gurrt.core.vectordb import VectorDB
-
+from gurrt.config.config import model, mmproj_model,llm_path,clip_path,SERVER_BIN
+import subprocess
+import requests
+import time
 
 class VideoRag:
     def __init__(self, reset:bool = False):
@@ -96,32 +102,19 @@ class VideoRag:
                     print("\033[1;32mSupermemory Not Cleared\033[0m")
             except:
                 print("\033[1;32mSupermemory Initialized✅\033[0m")
-        llm_path = models_dir / "gemma-3-4b-it-Q4_0.gguf"
-        clip_path = models_dir / "mmproj-model-f16.gguf"
-        embed_path = models_dir / "embeddinggemma-300M-bf16.gguf"        
         cmd_caption_server = [
             str(server_bin),
             "-m", str(llm_path),
             "--mmproj", str(clip_path),
             "-ngl", "99",
             "--parallel", "4",
-            "-c", "4096",
-            "--port", "8080"
+            "-c", "8192",
+            "--port", "8080",
+            "-n","150"
+            #"--flash-attn"
         ]
 
-        # cmd_embedding_server = [
-        #     str(server_bin),
-        #     "-m", str(embed_path),
-        #     "--embedding",
-        #     "--pooling", "cls",
-        #     "-ngl", "99",
-        #     "-b", "1024",
-        #     "-ub", "1024",
-        #     "-c", "1024",
-        #     "--port", "8081"
-        # ]
         process_caption = None
-        # process_embedding = None
 
         try:
             print("🔌 Launching background Gemma 3 Visual Captioning Core (Port 8080)...")
@@ -130,68 +123,32 @@ class VideoRag:
                 stdout=subprocess.DEVNULL, 
                 stderr=subprocess.DEVNULL
             )
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future_server = executor.submit(wait_for_server)
+                future_video = executor.submit(process_video, video_path)
+                server_ready = future_server.result()
+                frame_PIL, timestamps_list, ids, fps = future_video.result()
 
-            # print("🔌 Launching background High-Speed Gemma Embedding Core (Port 8081)...")
-            # process_embedding = subprocess.Popen(
-            #     cmd_embedding_server, 
-            #     stdout=subprocess.DEVNULL, 
-            #     stderr=subprocess.DEVNULL
-            # )
-
-            # --- SYSTEM HEALTH CHECK LAYER ---
-            print("⏳ Awaiting background system engine initialization...")
-            caption_ready = False
-            embedding_ready = False
-
-            # Ping both health check endpoints for up to 60 seconds
-            for attempt in range(40):
-                if not caption_ready:
-                    try:
-                        if requests.get("http://localhost:8080/health", timeout=1).status_code == 200:
-                            caption_ready = True
-                            print("✅ Captioning engine is online!")
-                    except requests.exceptions.RequestException:
-                        pass
-                else:
-                    break  # Exit early if captioning engine is ready    
-
-                # if not embedding_ready:
-                #     try:
-                #         if requests.get("http://localhost:8081/health", timeout=1).status_code == 200:
-                #             embedding_ready = True
-                #             print("✅ Embedding engine is online!")
-                #     except requests.exceptions.RequestException:
-                #         pass
-
-                # if caption_ready and embedding_ready:
-                #     print("✅ Dual-engine core is fully online and ready!")
-                #     break
-                
-                #time.sleep(1.5)
-
-            if not (caption_ready ):
+            if not server_ready:
                 raise TimeoutError("Captioning engine failed to initialize within VRAM allocation limits.")
-            
-            embeddings, metadatas, ids = scene_detection_frame_sampling_llama_server(
-                                                                    video_path= video_path,
-                                                                    clip_model=self.clip_model,
-                                                                    clip_processor=self.clip_processor,
-                                                                    device=self.device)
-            print(f"embeddings count: {len(embeddings)}")
-            print(f"metadatas count: {len(metadatas)}")
-            print(f"ids count: {len(ids)}")
-            if embeddings:
-                print(f"first embedding length: {len(embeddings[0])}")
-                print(f"first embedding type: {type(embeddings[0])}")
-            self.vectordb.add_frames(ids=ids,
-                                    embeddings=embeddings,
-                                    metadata=metadatas)
-            
 
+            print("🚀 Both video processing and server initialization completed successfully!")
+            embeddings, metadatas, ids = captioning_and_embedding_llama_server(
+                                                                        frame_PIL= frame_PIL,
+                                                                        clip_model=self.clip_model,
+                                                                        clip_processor=self.clip_processor,
+                                                                        device=self.device,
+                                                                        timestamps_list= timestamps_list,
+                                                                        ids= ids,
+                                                                        fps= fps,
+                                                                        video_path= video_path)              
+            self.vectordb.add_frames(ids=ids,
+                                        embeddings=embeddings,
+                                        metadata=metadatas)
+        except Exception as e:
+            print(f"❌ Critical error during server initialization or video processing: {e}")
         finally:
-            # --- AUTOMATIC CLEANUP LAYER ---
-            print("🧼 Safely terminating active background engine subprocesses...")
-            
+            print(" Safely terminating active background engine subprocesses...")            
             if process_caption:
                 process_caption.terminate()
                 process_caption.wait()

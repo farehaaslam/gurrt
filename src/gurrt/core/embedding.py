@@ -73,13 +73,17 @@ def frame_detection_blip(video_path: Path,
         json.dump(metadatas, f, indent=2)
     return embeddings_list, metadatas, ids
 
-def scene_detection_frame_sampling_llama_server(
-    video_path: Path,
+def captioning_and_embedding_llama_server(
+    frame_PIL,
+    timestamps_list,
+    ids,
+    fps,
+    video_path,
     clip_model,
     clip_processor,
     device
 ):
-    frame_PIL, timestamps_list, ids, fps = temporal_persistence_filter(video_path=video_path)
+    #frame_PIL, timestamps_list, ids, fps = temporal_persistence_filter(video_path=video_path)
 
     print(f"🎬 Dispatched {len(frame_PIL)} filtered frames to local llama-server...")
     captioned_nodes = []

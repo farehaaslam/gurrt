@@ -1,11 +1,20 @@
 import io
 import base64
 import asyncio
+import time
 import aiohttp
 from typing import List, Dict, Any
 import requests
 import json
 from tqdm import tqdm
+from gurrt.utils.utils import temporal_persistence_filter
+from pathlib import Path
+from huggingface_hub import hf_hub_download
+from  gurrt.config.config import hf_repo, model, mmproj_model
+from huggingface_hub.utils import enable_progress_bars
+from gurrt.core.prompts import GEMMA_CAPTION_PROMPT
+
+
 
 def _convert_pil_to_base64(pil_img) -> str:
     """Converts a PIL image object to a base64 string completely in memory."""
@@ -30,7 +39,7 @@ async def _caption_single_frame_worker(
                 "content": [
                     {
                         "type": "text", 
-                        "text": "Analyze this video lecture frame for a search indexing engine. Provide**On-Screen Content**: [Transcribe or summarize any key text, equations, bullet points, or diagrams visible].Be concise to the point "
+                        "text":GEMMA_CAPTION_PROMPT
 
                     },
                     {
@@ -63,8 +72,6 @@ def batch_caption_frames(frame_list: list, concurrency_limit: int = 4) -> List[D
         tasks = []
         completed = 0
         total = len(frame_list)
-
-        # progress bar tracking completions
         pbar = tqdm(total=total, desc="🧠 Captioning Frames", unit="frame")
 
         async def tracked_worker(session, b64_str, idx, semaphore):
@@ -98,44 +105,54 @@ def batch_caption_frames(frame_list: list, concurrency_limit: int = 4) -> List[D
         results = [r for r in results if r is not None]
         results.sort(key=lambda x: x["index"])
 
-        with open("captioned_nodes_debug.json", "w") as f:
-            json.dump(results, f, indent=4)
+        # with open("captioned_nodes_debug.json", "w") as f:
+        #     json.dump(results, f, indent=4)
 
         return results
 
     return asyncio.run(run_pipeline())
 
+def wait_for_server():
+    print("⏳ Awaiting background system engine initialization...")
+    for attempt in range(40):
+        try:
+            if requests.get("http://localhost:8080/health", timeout=1).status_code == 200:
+                print("✅ Captioning engine is online!")
+                return True
+        except requests.exceptions.RequestException:
+            pass
+        time.sleep(1.5)  
+    return False    
+
+def process_video(video_path):
+    print("🎬 Starting video temporal persistence filtering...")
+    return temporal_persistence_filter(video_path=video_path)
 
 
-def get_batch_embeddings(self, captions: List[str]) -> List[List[float]]:
+def download_gemma3_models(models_dir: Path):
     """
-    Submits an array of text descriptions to the running local Gemma embedding server,
-    utilizing hardware-level parallel execution context processing.
+    Sequentially downloads Gemma 3 model weights and its associated 
+    multimodal vision projector from Hugging Face Hub.
     """
-    if not captions:
-        return []
+
+    models_dir.mkdir(exist_ok=True, parents=True)
+    #enable_progress_bars()  
+    huggingface_repo = hf_repo
+    files = [
+        model, 
+        mmproj_model
+    ]
+
+    for filename in files:
+        target_path = models_dir / filename
         
-    url = "http://localhost:8081/v1/embeddings"
-    
-    # Passing the entire list array straight into the 'input' payload field
-    payload = {
-        "model": "embeddinggemma-300m",
-        "input": captions
-    }
-    
-    try:
-        # Batch sizes take slightly longer to calculate; increase timeout window to 30s
-        response = requests.post(url, json=payload, timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            # Extract and return the ordered array of calculated float vectors
-            # Format returned: [{"embedding": [...], "index": 0}, {"embedding": [...], "index": 1}]
-            return [item["embedding"] for item in result["data"]]
+        if not target_path.exists():
+            print(f"Downloading {filename} from Hugging Face...")
+            hf_hub_download(
+                repo_id=huggingface_repo,
+                filename=filename,
+                local_dir=str(models_dir),
+            )
+            print(f"✔ Successfully acquired {filename}")
         else:
-            raise RuntimeError(f"Embedding engine rejected payload batch: {response.status_code}")
-            
-    except Exception as e:
-        print(f"❌ Failed to extract vector representation array: {e}")
-        # Fallback tracking array: generate zero-filled shapes matching Gemma's 768 size limit
-        return [[0.0] * 768 for _ in range(len(captions))]
+            print(f"✔ {filename} already exists in target directory. Skipping.")
