@@ -3,12 +3,13 @@ import logging
 import sys
 import time
 import zipfile
-
+import subprocess
 import urllib
 from pathlib import Path
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 is_windows = sys.platform == "win32"
 
@@ -21,8 +22,6 @@ from pathlib import Path
 from platformdirs import user_config_dir
 import json
 import asyncio
-from gurrt.core.pipeline import VideoRag
-
 from rich.theme import Theme
 from rich.console import Console
 from rich.prompt import Prompt
@@ -31,6 +30,7 @@ from rich.rule import Rule
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn
 
+from gurrt.core.pipeline import VideoRag
 custom_theme = Theme({
     "primary": "bold green",
     "success": "bold bright_green",
@@ -94,7 +94,6 @@ def init():
         border_style= "green"
         ))
 
-@app.command()        
 @app.command()        
 def init_llama():
     PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -188,6 +187,7 @@ def init_llama():
         if 'zip_path' in locals() and os.path.exists(zip_path):
             os.remove(zip_path)
         raise typer.Exit(code=1) 
+
 @app.command()
 def index_llama(video_path):
     """
@@ -243,16 +243,31 @@ def models_download():
         task = progress.add_task("[info]Downloading models...", total=100)
         download_models(cache_dir)
         progress.update(task, completed=100)
-
     console.print(f"[success]✔ Models cached successfully at {cache_dir}![/success]")
 
 
 
 @app.command()
-def index(video_path):
+def index(video_path: Path, model_name:str):
     """
     Index a video by extracting frames and audio for retrieval.
     """
+    if not video_path.exists():
+        console.print(
+        Panel(
+            f"[primary]Path Does Not Exist[/primary]\n[info]{video_path}[/info]",
+            border_style="green"
+        )
+    )
+        return
+    result = subprocess.run(
+        ['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'],
+        capture_output=True,
+        text=True)
+    if int(result.stdout.strip()) > 4500:
+        FLAG = True
+    else:
+        FLAG = False
     console.print(
         Panel(
             f"[primary]Indexing Video[/primary]\n[info]{video_path}[/info]",
@@ -262,7 +277,11 @@ def index(video_path):
     rag = VideoRag(reset=True)
     
     video_time_start = time.time()
-    rag.index_video(video_path=video_path)
+    if model_name.lower() == ("smolvlm"):
+        rag.index_video(video_path=video_path,
+                        flag = FLAG)
+    elif model_name.lower() == "blip2":
+        rag.index_video_blip(video_path= video_path)
     video_time_end = time.time()
     
     audio_time_start = time.time()
