@@ -158,20 +158,112 @@ class VideoRag:
         self.models.release_whisper()
         self.models.release_all()
         
-    async def ask(self, query:str):
+    # async def ask(self, query:str):
+    #     reranker = self.models.get_reranker()
+        
+    #     search = SearchService(clip_model=self.clip_model,
+    #                                 clip_processor=self.clip_processor,
+    #                                 reranker= reranker,
+    #                                 vectordb= self.vectordb,
+    #                                 settings= self.settings)
+    #     caption_list, asr_list = search.query_collection(self.device,
+    #                                                           query,
+    #                                                           n_results=5,
+    #                                                           )
+    #     result = await self.llm.query_llm(query, 
+    #                                       caption_list=caption_list, 
+    #                                       asr_list=asr_list)
+    #     self.models.release_all()
+    #     return result
+    
+    async def ask(self, query: str):
+        # Initialize your search layout
         reranker = self.models.get_reranker()
         
-        search = SearchService(clip_model=self.clip_model,
-                                    clip_processor=self.clip_processor,
-                                    reranker= reranker,
-                                    vectordb= self.vectordb,
-                                    settings= self.settings)
-        caption_list, asr_list = search.query_collection(self.device,
-                                                              query,
-                                                              n_results=5,
-                                                              )
-        result = await self.llm.query_llm(query, 
-                                          caption_list=caption_list, 
-                                          asr_list=asr_list)
-        self.models.release_all()
+        search = SearchService(
+            clip_model=self.clip_model,
+            clip_processor=self.clip_processor,
+            reranker=reranker,
+            vectordb=self.vectordb,
+            settings=self.settings
+        )
+        
+        caption_list, asr_list = search.query_collection(
+            self.device,
+            query,
+            n_results=5,
+        )
+        
+        # Send variables directly across the local keep-alive socket connection
+        result = await self.llm.query_llm(
+            query, 
+            caption_list=caption_list, 
+            asr_list=asr_list
+        )
+        
         return result
+
+    async def interactive_chat_session(self):
+        """
+        Manages a continuous conversational session loop over the local 
+        running model instance context.
+        """
+        print("\n🚀 Preparing engine layers... Engine stays active until you exit.")
+        
+        # 1. Warm up resources up-front (Starts llama-server background sub-process)
+        # Ensure this method or whatever starts your llama-server is invoked here
+        # gurrt_app.models.initialize_server() 
+
+        cmd = [
+            str(SERVER_BIN),
+            "-m", str(llm_path),
+            "--mmproj", str(clip_path),
+            "-ngl", "99",
+            "--parallel", "4",
+            "-c", "8192",
+            "--port", "8080",
+            "-n","150"
+            #"--flash-attn"
+        ]
+        process_caption = subprocess.Popen(
+            cmd( 
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL
+            )
+        )
+        try:
+
+
+
+        print("\n🤖 Gurrt Engine Ready! Type your query below.")
+        print("👉 Type 'exit', 'quit', or press Ctrl+C to drop session.\n")
+
+        try:
+            while True:
+                # Capture user command-line terminal input string safely
+                user_query = input("📝 You: ").strip()
+                
+                # Check for terminal breakout signals
+                if not user_query:
+                    continue
+                if user_query.lower() in ["exit", "quit"]:
+                    print("\nShutting down interactive workspace session safely...")
+                    break
+
+                print("🔍 Processing embeddings and fetching context...")
+                try:
+                    # Dispatch execution down to your modified multi-turn logic
+                    response = await self.ask(query=user_query)
+                    print(f"\n🧠 Gurrt: {response}\n" + "-"*50 + "\n")
+                    
+                except Exception as query_err:
+                    print(f"❌ Execution Fault processing that request: {query_err}\n")
+
+        finally:
+            # 2. GUARANTEED TEARDOWN: Runs when loop breaks or user presses Ctrl+C
+            print("🧼 Cleaning memory allocation structures...")
+            self.models.release_all()
+            print("✔ System resources released cleanly.")
+
+    
+

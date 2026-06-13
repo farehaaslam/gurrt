@@ -73,6 +73,7 @@ class LLMService:
         )
         return result
 
+
     def delete(self) -> dict:
         # frames_deleted = self.client_memory.documents.delete_bulk(container_tags=["Frame_Captions"])
         # audio_deleted = self.client_memory.documents.delete_bulk(container_tags=["Audio_Captions"])
