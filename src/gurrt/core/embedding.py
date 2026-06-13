@@ -8,7 +8,7 @@ from gurrt.utils.utils import (
                             batched_captioning_blip,
                             temporal_persistence_filter,
                             captioning_ollama)
-from gurrt.utils.llama_server_utils import batch_caption_frames,get_batch_embeddings
+from gurrt.utils.llama_server_utils import batch_caption_frames
 
 def frame_detection(video_path: Path,
                     models: ModelManager,

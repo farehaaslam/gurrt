@@ -16,7 +16,7 @@ from gurrt.core.llm import LLMService
 from gurrt.core.models import ModelManager
 from gurrt.core.search import SearchService
 from gurrt.core.vectordb import VectorDB
-from gurrt.config.config import model, mmproj_model,llm_path,clip_path,SERVER_BIN
+from gurrt.config.config import LlamaServerManager
 import subprocess
 import requests
 import time
@@ -102,10 +102,11 @@ class VideoRag:
                     print("\033[1;32mSupermemory Not Cleared\033[0m")
             except:
                 print("\033[1;32mSupermemory Initialized✅\033[0m")
+        llama_server_manager = LlamaServerManager()        
         cmd_caption_server = [
             str(server_bin),
-            "-m", str(llm_path),
-            "--mmproj", str(clip_path),
+            "-m", str(llama_server_manager.llm_path),
+            "--mmproj", str(llama_server_manager.mmproj_path),
             "-ngl", "99",
             "--parallel", "4",
             "-c", "8192",

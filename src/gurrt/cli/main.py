@@ -11,8 +11,7 @@ from pathlib import Path
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-is_windows = sys.platform == "win32"
+
 
 logging.disable(logging.WARNING)
 
@@ -21,8 +20,9 @@ from pathlib import Path
 from platformdirs import user_config_dir
 import json
 import asyncio
+
 from gurrt.core.pipeline import VideoRag
-from gurrt.config.config import SERVER_BIN,MODELS_DIR,BIN_DIR,llm_path,clip_path,llama_release_url,PROJECT_ROOT
+from gurrt.config.config import LlamaServerManager
 from gurrt.utils.llama_server_utils import download_gemma3_models
 from rich.theme import Theme
 from rich.console import Console
@@ -45,9 +45,9 @@ console = Console(theme= custom_theme)
 
 
 app = typer.Typer(help= "🌿 gUrrT: A Video Understanding Tool")
-
 config_dir = Path(user_config_dir("gurrt"))
 config_dir.mkdir(exist_ok= True, parents= True)
+llama_server_manager= LlamaServerManager()
 
 @app.callback()
 def main():
@@ -98,19 +98,19 @@ def init():
 
 @app.command()
 def init_llama():
-    if not llm_path.exists() or not clip_path.exists():
+    if not llama_server_manager.llm_path.exists() or not llama_server_manager.mmproj_path.exists():
         console.print("[error]❌ Error: Fixed GGUF model components missing from the root /models/ folder.[/error]")
         console.print("[warning]Please run this setup downloader command first:[/warning]\n👉 [bold cyan]gurrt models-download[/bold cyan]\n")
         print("gemma3 models download started")
-        download_gemma3_models(MODELS_DIR) 
+        download_gemma3_models(llama_server_manager.models_dir) 
         #raise typer.Exit(code=1)
-    if SERVER_BIN.exists():
+    if llama_server_manager.server_bin.exists():
         console.print("[success]✔ Isolated runtime server binary verified.[/success]")
         return    
-    BIN_DIR.mkdir(parents=True, exist_ok=True)   
+    llama_server_manager.bin_dir.mkdir(parents=True, exist_ok=True)   
     console.print("[warning]⚠️ Runtime dependencies missing. Fetching latest release assets via GitHub API...[/warning]")
     try:
-        req = urllib.request.Request(llama_release_url, headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(llama_server_manager.llama_release_url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req) as response:
             release_data = json.loads(response.read().decode())
         
@@ -128,7 +128,7 @@ def init_llama():
                     download_url = asset.get("browser_download_url")
                     break
         
-        zip_path = PROJECT_ROOT / "temp_server.zip"
+        zip_path = config_dir/ "temp_server.zip"
         console.print(f"[info]📥 Downloading dynamic release: {download_url.split('/')[-1]}...[/info]")
         
         req_dl = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -144,12 +144,12 @@ def init_llama():
                     continue
                 if lowered_filename in ["llama-server.exe", "llama-server"]:
                     member_data = zip_ref.read(file_path)
-                    with open(SERVER_BIN, "wb") as target_file:
+                    with open(llama_server_manager.server_bin, "wb") as target_file:
                         target_file.write(member_data)
                     extracted_count += 1                
                 elif lowered_filename.endswith(".dll"):
                     member_data = zip_ref.read(file_path)
-                    dll_target_path = BIN_DIR / filename  # Direct to bin/
+                    dll_target_path = llama_server_manager.bin_dir / filename  # Direct to bin/
                     with open(dll_target_path, "wb") as target_file:
                         target_file.write(member_data)
                     extracted_count += 1
@@ -183,7 +183,7 @@ def index_llama(video_path):
     rag = VideoRag(reset=True)
     
     video_time_start = time.time()
-    rag.index_video_llama_server(video_path=video_path, server_bin=SERVER_BIN, models_dir=MODELS_DIR)
+    rag.index_video_llama_server(video_path=video_path, server_bin=llama_server_manager.server_bin, models_dir=llama_server_manager.models_dir)
     video_time_end = time.time()
     
     audio_time_start = time.time()
@@ -205,8 +205,8 @@ def models_download():
     """
     Download and cache all required AI models locally.
     """
-    cache_dir = config_dir /"models"
-    cache_dir.mkdir(exist_ok= True, parents= True)
+    # cache_dir = llama_server_manager.models_dir
+    # cache_dir.mkdir(exist_ok= True, parents= True)
     
     console.print(
         Panel(

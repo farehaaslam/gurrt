@@ -10,8 +10,7 @@ from tqdm import tqdm
 from gurrt.utils.utils import temporal_persistence_filter
 from pathlib import Path
 from huggingface_hub import hf_hub_download
-from  gurrt.config.config import hf_repo, model, mmproj_model
-from huggingface_hub.utils import enable_progress_bars
+from  gurrt.config.config import LlamaServerManager
 from gurrt.core.prompts import GEMMA_CAPTION_PROMPT
 
 
@@ -137,10 +136,11 @@ def download_gemma3_models(models_dir: Path):
 
     models_dir.mkdir(exist_ok=True, parents=True)
     #enable_progress_bars()  
-    huggingface_repo = hf_repo
+    llama_server_manager = LlamaServerManager()
+    huggingface_repo = llama_server_manager.hf_repo
     files = [
-        model, 
-        mmproj_model
+        llama_server_manager.model, 
+        llama_server_manager.mmproj_model
     ]
 
     for filename in files:
