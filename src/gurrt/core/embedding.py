@@ -19,10 +19,13 @@ def frame_detection(video_path: Path,
     
     frame_PIL, timestamps_list, ids, fps = temporal_persistence_filter(video_path= video_path)
     # blip_model, blip_processor = models.get_blip()
-    
+    if flag :
+        batch_size=4
+    else:
+        batch_size=8    
     smol_model, smol_processor = models.get_smol(flag = flag)
     caption_list, embeddings_list = batched_captioning(frame_list= frame_PIL, 
-                                                    batch_size=8, 
+                                                    batch_size= batch_size, 
                                                     clip_model= clip_model, 
                                                     clip_processor= clip_processor, 
                                                     # blip_model= blip_model, 
