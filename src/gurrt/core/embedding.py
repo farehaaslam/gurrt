@@ -1,56 +1,76 @@
 from pathlib import Path
-import asyncio
 import time
 from tqdm import tqdm
-import aiohttp
 import torch
 from gurrt.core.models import ModelManager
-from gurrt.utils.utils import detect_scenes, frame_listing_uniform, scene_split, frame_listing, batched_captioning, temporal_persistence_filter, uniform_frame_sampling, uniform_frame_sampling_ollama
-from gurrt.utils.llama_server_utils import batch_caption_frames,get_batch_embeddings
-def scene_detection_frame_sampling(
-                                   video_path: Path,
-                                   clip_model, 
-                                   clip_processor, 
-                                   models: ModelManager,
-                                #    blip_processor, 
-                                #    blip_model,
-                                   device):
+from gurrt.utils.utils import (
+                            batched_captioning,
+                            batched_captioning_blip,
+                            temporal_persistence_filter,
+                            captioning_ollama)
+from gurrt.utils.llama_server_utils import batch_caption_frames
 
-#     scene_list = scene_split(video_path)
-#     if not scene_list:
-#             print("\033[1;32mSince No Scene Detected!\nFalling over to Uniform Sampling Technique\033[0m")
-#             frame_PIL, timestamps_list, ids, fps = frame_listing_uniform(video_path= video_path)
-            
-#         #     embeddings, metadatas, ids =  uniform_frame_sampling(path = video_path,
-#         #                                                          clip_model= clip_model,
-#         #                                                          clip_processor= clip_processor,
-#         #                                                          blip_processor=blip_processor,
-#         #                                                          blip_model=blip_model,
-#         #                                                          device= device)
-#         #     return embeddings, metadatas, ids
-#     else:
-            
-#         frame_PIL, timestamps_list, ids, fps = frame_listing(scene_list= scene_list, 
-#                                                              video_path= video_path)
+def frame_detection(video_path: Path,
+                    models: ModelManager,
+                    flag: bool,
+                    clip_model, 
+                    clip_processor, 
+                    device):
+    
     frame_PIL, timestamps_list, ids, fps = temporal_persistence_filter(video_path= video_path)
-    blip_model, blip_processor = models.get_blip()
+    # blip_model, blip_processor = models.get_blip()
+    
+    smol_model, smol_processor = models.get_smol(flag = flag)
     caption_list, embeddings_list = batched_captioning(frame_list= frame_PIL, 
-                                                       batch_size=16, 
-                                                       clip_model= clip_model, 
-                                                       clip_processor= clip_processor, 
-                                                       blip_model= blip_model, 
-                                                       blip_processor= blip_processor,
-                                                       device = device)
+                                                    batch_size=8, 
+                                                    clip_model= clip_model, 
+                                                    clip_processor= clip_processor, 
+                                                    # blip_model= blip_model, 
+                                                    # blip_processor= blip_processor,
+                                                    smol_model= smol_model,
+                                                    smol_processor= smol_processor,
+                                                    device = device)
     metadatas = [
             {
-                    "caption": caption_list[i],
-                    "timestamp_ms": timestamps_list[i],
-                    "fps": fps,
-                    "source_path": str(video_path)
+            "caption": caption_list[i],
+            "timestamp_ms": timestamps_list[i],
+            "fps": fps,
+            "source_path": str(video_path)
             }
                 for i in range(len(caption_list))
                 ]
-    models.release_blip()
+    import json
+    with open("metadatas_smol.json", "w") as f:
+        json.dump(metadatas, f, indent=2)
+    return embeddings_list, metadatas, ids
+
+def frame_detection_blip(video_path: Path,
+                    models: ModelManager,
+                    clip_model, 
+                    clip_processor, 
+                    device):
+    
+    frame_PIL, timestamps_list, ids, fps = temporal_persistence_filter(video_path= video_path)
+    blip_model, blip_processor = models.get_blip()    
+    caption_list, embeddings_list = batched_captioning_blip(frame_list= frame_PIL, 
+                                                    batch_size=8, 
+                                                    clip_model= clip_model, 
+                                                    clip_processor= clip_processor, 
+                                                    blip_model= blip_model, 
+                                                    blip_processor= blip_processor,
+                                                    device = device)
+    metadatas = [
+            {
+            "caption": caption_list[i],
+            "timestamp_ms": timestamps_list[i],
+            "fps": fps,
+            "source_path": str(video_path)
+            }
+                for i in range(len(caption_list))
+                ]
+    import json
+    with open("metadatas_blip.json", "w") as f:
+        json.dump(metadatas, f, indent=2)
     return embeddings_list, metadatas, ids
 
 def captioning_and_embedding_llama_server(
@@ -88,13 +108,9 @@ def captioning_and_embedding_llama_server(
         for i in range(len(caption_list))
     ]
     print("batch captioning completed, now retrieving embeddings clip embeddings...")
-
     # --- CLIP EMBEDDING LOOP ---
     embeddings = []
     start_time = time.time()
-
-
-
     for i, frame in enumerate(tqdm(frame_PIL, desc="🖼️ Extracting CLIP Embeddings")):
         try:
             inputs = clip_processor(images=frame, return_tensors="pt").to(device)
@@ -110,28 +126,19 @@ def captioning_and_embedding_llama_server(
     end_time = time.time()
     print(f"⏱️ CLIP embedding extraction completed in {end_time - start_time:.2f} seconds.")
     return embeddings, metadatas, ids
-  
-def scene_detection_frame_sampling_ollama(
-                                   video_path: Path,
-                                   clip_model, 
-                                   clip_processor, 
-                                   model_name:str,
-                                   device):
 
-    scene_list = scene_split(video_path)
-    if not scene_list:
-            print("\033[1;32mSince No Scene Detected!\nFalling over to Uniform Sampling Technique\033[0m")
-            embeddings, metadatas, ids =  uniform_frame_sampling_ollama(
-                                                                 video_path= video_path,
-                                                                 clip_model= clip_model,
-                                                                 clip_processor= clip_processor,
-                                                                 model_name= model_name,
-                                                                 device= device)
-            return embeddings, metadatas, ids
-    embeddings, metadatas, ids = detect_scenes(video_path=video_path,
-                                               scene_list=scene_list,
-                                               clip_model=clip_model,
-                                               clip_processor=clip_processor,
-                                               model= model_name,
-                                               device = device)
+def frame_detection_ollama(video_path: Path,
+                            clip_model, 
+                            clip_processor, 
+                            model_name:str,
+                            device):
+    frame_PIL, timestamps_list, ids, fps = temporal_persistence_filter(video_path= video_path)
+    embeddings, metadatas, ids =  captioning_ollama(video_path= video_path,
+                                                    clip_model= clip_model,
+                                                    clip_processor= clip_processor,
+                                                    model_name= model_name,
+                                                    frame_PIL= frame_PIL,
+                                                    timestamps_list = timestamps_list,
+                                                    fps = fps, 
+                                                    device= device)
     return embeddings, metadatas, ids
