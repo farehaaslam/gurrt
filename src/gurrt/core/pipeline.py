@@ -177,25 +177,25 @@ class VideoRag:
         self.models.release_clip()
         self.models.release_all()
         
-    # async def ask(self, query:str):
-    #     reranker = self.models.get_reranker()
+    async def ask(self, query:str):
+        reranker = self.models.get_reranker()
         
-    #     search = SearchService(clip_model=self.clip_model,
-    #                                 clip_processor=self.clip_processor,
-    #                                 reranker= reranker,
-    #                                 vectordb= self.vectordb,
-    #                                 settings= self.settings)
-    #     caption_list, asr_list = search.query_collection(self.device,
-    #                                                           query,
-    #                                                           n_results=5,
-    #                                                           )
-    #     result = await self.llm.query_llm(query, 
-    #                                       caption_list=caption_list, 
-    #                                       asr_list=asr_list)
-    #     self.models.release_all()
-    #     return result
+        search = SearchService(clip_model=self.clip_model,
+                                    clip_processor=self.clip_processor,
+                                    reranker= reranker,
+                                    vectordb= self.vectordb,
+                                    settings= self.settings)
+        caption_list, asr_list = search.query_collection(self.device,
+                                                              query,
+                                                              n_results=5,
+                                                              )
+        result = await self.llm.query_llm(query, 
+                                          caption_list=caption_list, 
+                                          asr_list=asr_list)
+        self.models.release_all()
+        return result
     
-    async def ask(self, query: str):
+    async def ask_local(self, query: str):
         # Initialize your search layout
         reranker = self.models.get_reranker()
         
@@ -214,7 +214,7 @@ class VideoRag:
         )
         
         # Send variables directly across the local keep-alive socket connection
-        result = await self.llm.query_llm(
+        result = await self.llm.query_llm_local(
             query, 
             caption_list=caption_list, 
             asr_list=asr_list
@@ -258,13 +258,13 @@ class VideoRag:
                 user_query = input("📝 You: ").strip()
                 if not user_query:
                     continue
-                if user_query.lower() in ["exit", "quit"]:
+                if user_query.lower() in ["exit", "quit","end","bye"]:
                     print("\nShutting down interactive workspace session safely...")
                     break
 
                 print("Thinking...")
                 try:
-                    response = await self.ask(query=user_query)
+                    response = await self.ask_local(query=user_query)
                     print(f"\n🧠 Gurrt: {response}\n" + "-"*50 + "\n")
                 except Exception as query_err:
                     print(f"❌ Execution Fault: {query_err}\n")

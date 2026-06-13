@@ -13,7 +13,7 @@ class LLMService:
                         )
         self.client_memory = Supermemory(api_key=settings.SUPERMEMORY_API_KEY)
 
-    async def query_llm(self, 
+    async def query_llm_local(self, 
                         query:str,
                         caption_list: list,
                         asr_list: list) -> str:
@@ -46,7 +46,38 @@ class LLMService:
         )
         return result
 
-
+    async def query_llm(self, 
+                            query:str,
+                            caption_list: list,
+                            asr_list: list) -> str:
+            context_caption = "\n".join(caption_list)
+            asr_text = "\n".join(asr_list)
+            chat_context = self.client_memory.search.documents(
+                q= query,
+                container_tags = ["Previous_Chat"],
+                limit = 3
+            )
+            parser = StrOutputParser()
+            prompt = PromptTemplate(
+                template = LLM_QUERY_PROMPT,
+                input_variables = ["context_frame", "context_audio", "previous_chat","query"]
+            )
+            chain = prompt | self.llm | parser
+            result = await chain.ainvoke({
+                "context_frame": context_caption,
+                "context_audio": asr_text,
+                "previous_chat": chat_context,
+                "query" : query
+            })
+            context = f"{query}\n\n\n{result}"
+            self.client_memory.add(
+                content = context,
+                container_tags = ["Previous_Chat"],
+                metadata = {
+                    "note_id": "Retrieved Chat"
+                }
+            )
+            return result
     def delete(self) -> dict:
         chat_deleted = self.client_memory.documents.delete_bulk(container_tags=["Previous_Chat"])
         return {"chat_deleted": chat_deleted}

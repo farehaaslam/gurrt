@@ -307,22 +307,22 @@ def index_ollama(video_path, model_name):
             border_style="green"
         ))
     
-# @app.command(help = "Ask a question about an indexed video.")
-# def ask(query:str):
-#     """
-#     Ask a question about an indexed video.
-#     """
-#     rag = VideoRag()
+@app.command(help = "Ask a question about an indexed video.")
+def ask(query:str):
+    """
+    Ask a question about an indexed video.
+    """
+    rag = VideoRag()
     
-#     with console.status("[info]Thinking...[/info]", spinner="dots"):
-#         response = asyncio.run(rag.ask(query= query))
-#     console.print(
-#         Panel(
-#             response,
-#             title="[success]Answer[/success]",
-#             border_style="green"
-#         )
-#     )
+    with console.status("[info]Thinking...[/info]", spinner="dots"):
+        response = asyncio.run(rag.ask(query= query))
+    console.print(
+        Panel(
+            response,
+            title="[success]Answer[/success]",
+            border_style="green"
+        )
+    )
 @app.command()
 def chat():
     """Start an interactive session with Gurrt."""
