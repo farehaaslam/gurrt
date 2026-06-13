@@ -96,6 +96,8 @@ def init():
 
 @app.command()
 def init_llama():
+    """
+    Initialize local Llama-Server"""
     if not llama_server_manager.llm_path.exists() or not llama_server_manager.mmproj_path.exists():
        
         print("gemma3 models download started")
@@ -325,7 +327,7 @@ def ask(query:str):
     )
 @app.command()
 def chat():
-    """Start an interactive session with Gurrt."""
+    """Start an interactive session with Gurrt via llama."""
     rag = VideoRag()
     asyncio.run(rag.interactive_chat_session())       
         

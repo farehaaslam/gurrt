@@ -1,7 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
-import requests
 
 from gurrt.config.config import Settings
 from gurrt.core.asr import audio_extract_chunk_and_embed
