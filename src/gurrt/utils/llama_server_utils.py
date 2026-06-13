@@ -8,6 +8,11 @@ import requests
 import json
 from tqdm import tqdm
 from gurrt.utils.utils import temporal_persistence_filter
+from pathlib import Path
+from huggingface_hub import hf_hub_download
+from  gurrt.config.config import hf_repo, model, mmproj_model
+from huggingface_hub.utils import enable_progress_bars
+
 
 
 def _convert_pil_to_base64(pil_img) -> str:
@@ -66,8 +71,6 @@ def batch_caption_frames(frame_list: list, concurrency_limit: int = 4) -> List[D
         tasks = []
         completed = 0
         total = len(frame_list)
-
-        # progress bar tracking completions
         pbar = tqdm(total=total, desc="🧠 Captioning Frames", unit="frame")
 
         async def tracked_worker(session, b64_str, idx, semaphore):
@@ -101,48 +104,13 @@ def batch_caption_frames(frame_list: list, concurrency_limit: int = 4) -> List[D
         results = [r for r in results if r is not None]
         results.sort(key=lambda x: x["index"])
 
-        with open("captioned_nodes_debug.json", "w") as f:
-            json.dump(results, f, indent=4)
+        # with open("captioned_nodes_debug.json", "w") as f:
+        #     json.dump(results, f, indent=4)
 
         return results
 
     return asyncio.run(run_pipeline())
 
-
-
-def get_batch_embeddings(self, captions: List[str]) -> List[List[float]]:
-    """
-    Submits an array of text descriptions to the running local Gemma embedding server,
-    utilizing hardware-level parallel execution context processing.
-    """
-    if not captions:
-        return []
-        
-    url = "http://localhost:8081/v1/embeddings"
-    
-    # Passing the entire list array straight into the 'input' payload field
-    payload = {
-        "model": "embeddinggemma-300m",
-        "input": captions
-    }
-    
-    try:
-        # Batch sizes take slightly longer to calculate; increase timeout window to 30s
-        response = requests.post(url, json=payload, timeout=30)
-        
-        if response.status_code == 200:
-            result = response.json()
-            # Extract and return the ordered array of calculated float vectors
-            # Format returned: [{"embedding": [...], "index": 0}, {"embedding": [...], "index": 1}]
-            return [item["embedding"] for item in result["data"]]
-        else:
-            raise RuntimeError(f"Embedding engine rejected payload batch: {response.status_code}")
-            
-    except Exception as e:
-        print(f"❌ Failed to extract vector representation array: {e}")
-        # Fallback tracking array: generate zero-filled shapes matching Gemma's 768 size limit
-        return [[0.0] * 768 for _ in range(len(captions))]
-    
 def wait_for_server():
     print("⏳ Awaiting background system engine initialization...")
     for attempt in range(40):
@@ -152,9 +120,38 @@ def wait_for_server():
                 return True
         except requests.exceptions.RequestException:
             pass
-        time.sleep(1.5)  # Restored sleep so you don't spam the CPU
+        time.sleep(1.5)  
     return False    
 
 def process_video(video_path):
     print("🎬 Starting video temporal persistence filtering...")
     return temporal_persistence_filter(video_path=video_path)
+
+
+def download_gemma3_models(models_dir: Path):
+    """
+    Sequentially downloads Gemma 3 model weights and its associated 
+    multimodal vision projector from Hugging Face Hub.
+    """
+
+    models_dir.mkdir(exist_ok=True, parents=True)
+    #enable_progress_bars()  
+    huggingface_repo = hf_repo
+    files = [
+        model, 
+        mmproj_model
+    ]
+
+    for filename in files:
+        target_path = models_dir / filename
+        
+        if not target_path.exists():
+            print(f"Downloading {filename} from Hugging Face...")
+            hf_hub_download(
+                repo_id=huggingface_repo,
+                filename=filename,
+                local_dir=str(models_dir),
+            )
+            print(f"✔ Successfully acquired {filename}")
+        else:
+            print(f"✔ {filename} already exists in target directory. Skipping.")

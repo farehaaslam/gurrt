@@ -2,13 +2,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from gurrt.config.config import Settings
 from gurrt.core.asr import audio_extract_chunk_and_embed
-from gurrt.core.embedding import scene_detection_frame_sampling, scene_detection_frame_sampling_ollama,scene_detection_frame_sampling_llama_server
+from gurrt.core.embedding import scene_detection_frame_sampling, scene_detection_frame_sampling_ollama,captioning_and_embedding_llama_server
 from gurrt.utils.llama_server_utils import process_video,wait_for_server
 from gurrt.core.llm import LLMService
 from gurrt.core.models import ModelManager
 from gurrt.core.search import SearchService
 from gurrt.core.vectordb import VectorDB
-from gurrt.config.config import model, mmproj_model
+from gurrt.config.config import model, mmproj_model,llm_path,clip_path,SERVER_BIN
 import subprocess
 import requests
 import time
@@ -86,9 +86,6 @@ class VideoRag:
                     print("\033[1;32mSupermemory Not Cleared\033[0m")
             except:
                 print("\033[1;32mSupermemory Initialized✅\033[0m")
-        llm_path = models_dir / model
-        clip_path = models_dir / mmproj_model
-        embed_path = models_dir / "embeddinggemma-300M-bf16.gguf"        
         cmd_caption_server = [
             str(server_bin),
             "-m", str(llm_path),
@@ -99,7 +96,6 @@ class VideoRag:
             "--port", "8080",
             "-n","150"
             #"--flash-attn"
-
         ]
 
         process_caption = None
@@ -111,23 +107,17 @@ class VideoRag:
                 stdout=subprocess.DEVNULL, 
                 stderr=subprocess.DEVNULL
             )
-
-
             with ThreadPoolExecutor(max_workers=2) as executor:
-                # Submit both tasks to the thread pool
                 future_server = executor.submit(wait_for_server)
                 future_video = executor.submit(process_video, video_path)
-
-                # Gather results (this waits for both to finish)
                 server_ready = future_server.result()
                 frame_PIL, timestamps_list, ids, fps = future_video.result()
 
-            # 4. Final verification before moving to the next step
             if not server_ready:
                 raise TimeoutError("Captioning engine failed to initialize within VRAM allocation limits.")
 
             print("🚀 Both video processing and server initialization completed successfully!")
-            embeddings, metadatas, ids = scene_detection_frame_sampling_llama_server(
+            embeddings, metadatas, ids = captioning_and_embedding_llama_server(
                                                                         frame_PIL= frame_PIL,
                                                                         clip_model=self.clip_model,
                                                                         clip_processor=self.clip_processor,
@@ -136,25 +126,13 @@ class VideoRag:
                                                                         ids= ids,
                                                                         fps= fps,
                                                                         video_path= video_path)              
-            print(f"embeddings count: {len(embeddings)}")
-            print(f"metadatas count: {len(metadatas)}")
-            print(f"ids count: {len(ids)}")
-            if embeddings:
-                print(f"first embedding length: {len(embeddings[0])}")
-                print(f"first embedding type: {type(embeddings[0])}")
             self.vectordb.add_frames(ids=ids,
                                         embeddings=embeddings,
                                         metadata=metadatas)
         except Exception as e:
             print(f"❌ Critical error during server initialization or video processing: {e}")
-
-
-            
-
         finally:
-            # --- AUTOMATIC CLEANUP LAYER ---
-            print("🧼 Safely terminating active background engine subprocesses...")
-            
+            print(" Safely terminating active background engine subprocesses...")            
             if process_caption:
                 process_caption.terminate()
                 process_caption.wait()

@@ -53,7 +53,7 @@ def scene_detection_frame_sampling(
     models.release_blip()
     return embeddings_list, metadatas, ids
 
-def scene_detection_frame_sampling_llama_server(
+def captioning_and_embedding_llama_server(
     frame_PIL,
     timestamps_list,
     ids,
