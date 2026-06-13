@@ -205,8 +205,8 @@ def models_download():
     """
     Download and cache all required AI models locally.
     """
-    # cache_dir = llama_server_manager.models_dir
-    # cache_dir.mkdir(exist_ok= True, parents= True)
+    cache_dir = config_dir/ "models"
+    cache_dir.mkdir(exist_ok= True, parents= True)
     
     console.print(
         Panel(
