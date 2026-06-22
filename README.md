@@ -1,179 +1,216 @@
-[![PyPI version](https://img.shields.io/pypi/v/gurrt)](https://pypi.org/project/gurrt/) [![Python Versions](https://img.shields.io/pypi/pyversions/gurrt)](https://pypi.org/project/gurrt/) 
-[![License](https://img.shields.io/pypi/l/gurrt)](https://pypi.org/project/gurrt/) [![Downloads](https://pepy.tech/badge/gurrt/)](https://pepy.tech/project/gurrt) [![Twitter Follow](https://img.shields.io/twitter/follow/muffBozo.svg?style=social)](https://twitter.com/muffBozo)[![Twitter Follow](https://img.shields.io/twitter/follow/as_farrr.svg?style=social)](https://x.com/as_farrr)
-<p align="center">
-  <img src="https://raw.githubusercontent.com/owaismohammad/gurrt/main/gurrt.png" width="450">
+<a href="https://pypi.org/project/gurrt/"><img src="https://img.shields.io/pypi/v/gurrt"></a>
+<a href="https://pypi.org/project/gurrt/"><img src="https://img.shields.io/pypi/pyversions/gurrt"></a>
+<a href="https://pypi.org/project/gurrt/"><img src="https://img.shields.io/pypi/l/gurrt"></a>
+<a href="https://pepy.tech/project/gurrt"><img src="https://pepy.tech/badge/gurrt/"></a>
+<a href="https://twitter.com/muffBozo"><img src="https://img.shields.io/twitter/follow/muffBozo.svg?style=social"></a>
+<a href="https://x.com/as_farrr"><img src="https://img.shields.io/twitter/follow/as_farrr.svg?style=social"></a>
+
+<p>
+  <img src="https://raw.githubusercontent.com/owaismohammad/gurrt/main/gurrt.png">
 </p>
 
-**gUrrT** (derived from the **Surveilens** research paper) is an optimized framework designed to bypass the heavy computational requirements of Large Video Language Models (LVLMs). While standard LVLMs often require high-end enterprise GPUs, gUrrT is engineered to deliver high-accuracy video understanding on consumer grade hardware (e.g., 4GB VRAM) by decomposing video into its core sensory components.
+<h1>gUrrT · Conversational Video Intelligence</h1>
 
-**The Philosophy: Pragmatic Decomposition**
-With gUrrT, the goal isn't to reinvent the wheel or solve the complex "temporal dimension" problem that plagues modern AI. Instead, the project explores a critical question: Can we achieve "Video Understanding" simply by treating a video as a searchable collection of moments?
+We study a lot on YouTube and questions keep coming up mid-lecture. Existing assistants usually answer from generic world knowledge, not from the exact lecture context.
 
-By bypassing the temporal modeling used in expensive LVLMs, gUrrT enables you to "talk to a video" by transforming it into a structured, queryable index. It gets the job done without the hefty compute tax.
+- **Google** gives broad explanations without lecture-specific grounding.
+- **General LLM chat** reasons well but often has not seen your video.
+- **Platform-native Q&A** can be limited to transcript-only understanding.
+- **Premium video LLM flows** typically require re-uploading, have duration limits, and can be costly at scale.
 
-The "Temporal Dimension" of video is computationally expensive to process directly. gUrrT shifts the paradigm from **Video Modeling** to **Contextual Retrieval**:
+The signal you need is already inside the video.
 
-* **Vision Models (The Eyes):** Describe discrete scenes and frames.
-* **Transcription Models (The Ears):** Process audio via Faster-Whisper.
-* **Advanced Sampling:** Intelligently reduces the frame-load to only what is relevant.
-* **RAG (The Brain):** Compiles these sensory inputs into a vector-based context for a Large Language Model (LLM).
+**gUrrT builds that context and lets you query it.**
 
----
+## Why Existing Solutions Fall Short
 
-### **The Technical Pipeline**
+Large Video Language Models (LVLMs) are capable, but expensive to run for long-form lecture understanding.
 
-1. **Dual-Stage Frame Sampling:** * **Scene Detection:** The primary method, segmenting video into distinct events. For each scene, the pipeline captures the **start, middle, and end frames**.
-* **Uniform Sampling:** Acts as a robust fallback if no distinct scene transitions are detected.
-* *Note: SSIM (Structural Similarity Index) was tested but discarded to prioritize processing speed.*
+- High VRAM requirements remain common for strong open-weight video models.
+- Uniform frame sampling wastes compute on near-duplicate slide frames.
+- Long lectures become noisy or truncated context, reducing answer quality.
 
+Cloud video inference can help but introduces dependency on external infrastructure, upload overhead, and usage limits.
 
-2. **Multimodal Embedding:** * Visuals are embedded using **CLIP**, and captions are generated via **BLIP** (though experimentation shows BLIP’s limitations in context density).
-* Audio is processed via **Faster-Whisper** and stored in a separate vector collection.
+## Where gUrrT Comes In
 
+gUrrT shifts from **full video modeling** to **context construction + retrieval**.
 
-3. **Inference & LLM Integration:**
-* The system supports local execution via **Ollama** (Gemma 3 performs exceptionally well) and cloud-based inference via **Groq** (utilizing Llama 3-70B for high-reasoning tasks).
+- Extract only meaningful visual changes.
+- Transcribe audio with Faster-Whisper.
+- Embed visual/audio evidence into ChromaDB.
+- Retrieve and rerank relevant context.
+- Let an LLM reason over that focused evidence.
 
+No 80 GB GPU requirement for practical lecture Q&A workflows.
 
-4. **Supermemory:** * To prevent context "noise," the system utilizes a **Supermemory** feature that maintains a clean, video-specific context. It refreshes upon new video uploads to ensure response quality remains high and relevant to the current file.
+```text
+Video
+ │
+ ├── Frame Extraction (The Eyes)
+ │     Temporal persistence filtering for meaningful changes
+ │     ↓ Captioning backend (SmolVLM / BLIP2 / Ollama / llama.cpp path)
+ │     ↓ CLIP embeddings
+ │     ↓ Stored in ChromaDB
+ │
+ ├── Audio Pipeline (The Ears)
+ │     Audio extraction + Faster-Whisper transcription
+ │     ↓ Chunked + embedded
+ │     ↓ Stored in ChromaDB (separate collection)
+ │
+ └── Query Time
+       User question → query embedding → dual retrieval
+       CrossEncoder reranking
+       LLM synthesizes final answer
+```
 
----
+## v2 Direction (Context Quality First)
 
-### **Key Insights & Experimental Inferences**
+Answer quality follows context quality.
 
-* **The "Captioning Bottleneck":** The quality of the LLM’s response is directly proportional to the quality of the image-to-text descriptions. Upgrading from BLIP to more descriptive captioning models remains a primary goal for improving context.
-* **Model Scaling:** Moving from **Llama 3.1-8B** to **Llama 3-70B** resulted in a phenomenal leap in performance. While the 8B model struggled with simple queries when fed BLIP data, the 70B model (and Gemma 3) demonstrated the "reasoning' necessary to synthesize poor context into accurate answers.
-* **The Summary Challenge:** While RAG excels at specific "needle-in-a-haystack" queries, generating holistic video summaries remains a challenge for vanilla RAG architectures.
+- **v1 failure mode A (oversampling):** too many redundant frames.
+- **v1 failure mode B (undersampling):** scene-cut style detectors miss lecture slide evolution.
+- **v2 direction:** temporal persistence filtering for genuine content changes.
 
----
+This reduces visual noise, increases relevant coverage, and improves indexing speed by avoiding redundant captioning passes.
 
-### **Future Roadmap**
+### Captioning & Runtime Options
 
-I am looking into transitioning from **Vanilla RAG** to a **Graph-based RAG** or a **Hierarchical RAG** architecture. This would allow the system to understand the relationship between scenes over time, rather than treating them as isolated data points.
+| Capability | v1 | v2 |
+|--|--|--|
+| Captioning | BLIP-centered | SmolVLM, BLIP2, Gemma 3 via llama.cpp, Ollama |
+| Audio | legacy extraction + Whisper | optimized extraction + Faster-Whisper flow |
+| Interfaces | basic CLI flow | richer CLI + GUI workflow |
 
-## 🌿 Quick Start Guide for pypi package
+Backend choices:
 
-### 1. Installation
+| Backend | Command | Typical VRAM |
+|---------|---------|--------------|
+| SmolVLM 500M | `gurrt index <path> smolvlm` | ~4 GB |
+| BLIP2 | `gurrt index <path> blip2` | ~4 GB |
+| Gemma 3 via llama.cpp path | `gurrt index-llama <path>` | 4 GB+ |
+| Ollama vision model | `gurrt index-ollama <path> <model>` | varies |
 
-Set up **gurrt** using `uv`. Note: This project requires **Python 3.12**.
+## Installation
+
+Requires **Python 3.12**.
+
+### pip
 
 ```bash
-# 1. Install uv and set Python version
+python3.12 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+# install PyTorch (choose one path)
+# GPU (CUDA 12.1 wheels)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# CPU
+pip install torch torchvision torchaudio
+
+pip install gurrt
+```
+
+### uv
+
+```bash
 pip install uv
 uv venv
-uv python pin 3.12
-
-# 2. Activate environment
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-
-# 3. Install gurrt (Standard/CPU)
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 uv pip install gurrt
-
-# 4. OR Install with GPU Support
-uv pip install gurrt[cuda] --extra-index-url https://download.pytorch.org/whl/cu121
-
 ```
 
----
+Optional CUDA routing in `pyproject.toml`:
 
-### 2. Commands
+```toml
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
 
-| Command | Description |
-| --- | --- |
-| `gurrt init` | Configure API keys (Groq, Supermemory, Ollama). |
-| `gurrt models-download` | Download and cache AI models locally. |
-| `gurrt index <path>` | Extract frames and audio for search. |
-| `gurrt index-ollama <path> <model>` | Index using a specific Ollama model. |
-| `gurrt ask "<query>"` | Query your indexed video content. |
-
-The tool automatically optimizes performance by disabling unnecessary logging and tokenizer parallelism to ensure a clean CLI experience yet some logs do appear of Moviepy will resolve it in future iterations.
-
----
-
-
-### Architecture Overview
-```bash
-Video
-  │
-  ├── Smart Frame Extraction
-  │     └── Captioning + Embeddings
-  │
-  ├── Audio Extraction
-  │     └── Speech-to-Text + Embeddings
-  │
-  ├── Vector Memory Store
-  │
-  ├── Supermemory (Persistent Conversation Layer)
-  │
-  └── LLM Reasoning Engine
+[tool.uv.sources]
+torch = { index = "pytorch-cu121" }
+torchvision = { index = "pytorch-cu121" }
+torchaudio = { index = "pytorch-cu121" }
 ```
 
-### Project Setup (using uv)
-
-```bash
-# Install uv if you haven't already
-pip install uv
-
-# Sync dependencies
-uv sync
-
-# Activate environment
-.venv\Scripts\activate
+### clone the repo
+```shell
+git clone https://github.com/farehaaslam/gurrt.git
 ```
 
-### File Structure
+## How to Use
+
+Main executable: `gurrt`
+
+**First-time order:**
 
 ```bash
+gurrt init
+gurrt models-download
+gurrt index ./videos/lecture.mp4 smolvlm
+# then ask
+gurrt ask "your question"
+```
+
+### Commands
+
+| Command | What it does |
+|---------|--------------|
+| `gurrt init` | Saves Groq + Supermemory API keys. |
+| `gurrt models-download` | Downloads CLIP, SmolVLM, BLIP2, Whisper, and reranker assets to local cache. |
+| `gurrt index <path> smolvlm|blip2` | Indexes video frames + audio into ChromaDB. |
+| `gurrt init-llama` | Prepares llama-server + Gemma artifacts for local flow. |
+| `gurrt index-llama <path>` | Indexes with local llama-server captioning flow. |
+| `gurrt index-ollama <path> <model>` | Indexes using selected Ollama model. |
+| `gurrt ask "<query>"` | Answers using indexed context. uses groq api (Not local) |
+| `gurrt chat` | Starts interactive chat session. uses llama cpp (fully local)|
+
+> Use subcommands in the form `gurrt <command>`.
+
+## Requirements
+
+- Python 3.12+
+- <a href="https://console.groq.com">Groq API key</a>
+- <a href="https://supermemory.ai">Supermemory API key</a>
+- GPU with 4 GB+ VRAM recommended (CPU fallback works but is slower)
+
+## Project Structure
+
+```text
 gurrt/
-├── src/
-│   |
-│   │
-│   └── videorag/                      # Core Video-RAG application package
-│       │
-│       ├── api/
-│       │   └── server.py              # API server (exposes endpoints for querying, ingestion, etc.)
-│       │
-│       ├── cli/
-│       │   └── main.py                # CLI entry point (init, ingest, query commands)
-│       │
-│       ├── config/
-│       │   └── config.py              # Configuration management (API keys, paths, environment setup)
-│       │
-│       ├── core/                      # Core intelligence pipeline
-│       │   ├── __init__.py
-│       │   ├── asr.py                 # Audio extraction + speech-to-text processing
-│       │   ├── embedding.py           # Embedding generation for captions & transcripts
-│       │   ├── llm.py                 # LLM interaction and reasoning logic
-│       │   ├── models.py              # Model loading and management utilities
-│       │   ├── pipeline.py            # End-to-end ingestion + query pipeline orchestration
-│       │   ├── prompts.py             # Prompt templates and structured context injection
-│       │   ├── search.py              # Retrieval logic (semantic search over stored embeddings)
-│       │   └── vectordb.py            # Vector database interface and storage abstraction
-│       │
-│       └── utils/
-│           └── utils.py            # Shared utility functions and helpers
-│
-└── README.md                         # Project documentation
+└── src/gurrt/
+    ├── api/
+    │   └── server.py          # API module (experimental)
+    ├── app/
+    │   └── gurrt_gui.py       # Tkinter GUI
+    ├── cli/
+    │   └── main.py            # CLI entry point
+    ├── config/
+    │   └── config.py          # Config + paths
+    ├── core/
+    │   ├── asr.py             # Audio extraction + transcription
+    │   ├── embedding.py       # Captioning + embeddings
+    │   ├── llm.py             # LLM chain + Supermemory
+    │   ├── models.py          # Model loading/cache/release
+    │   ├── pipeline.py        # End-to-end orchestration
+    │   ├── prompts.py         # Prompt templates
+    │   ├── search.py          # Retrieval + reranking
+    │   └── vectordb.py        # ChromaDB interface
+    └── utils/
+        ├── llama_server_utils.py
+        └── utils.py
 ```
 
+## Contributions
 
+Contributions are welcome.
 
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to your fork
+5. Open a Pull Request against `main`
 
+## License
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+This project is open-source under the [MIT License](LICENSE).
